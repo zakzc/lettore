@@ -69,8 +69,8 @@ M0 Spike · M1 Extraction · M2 TTS · M3 UI polish · M4 Packaging · M5 v2 (OC
 
 ## Non-goals (v1)
 
-Windows/Linux, browser/web version, public distribution, OCR, word-level highlight, accounts or cloud sync.
+Windows/Linux, browser/web version, distribution of installers, OCR, word-level highlight, accounts or cloud sync.
 
 ## License
 
-Personal use only; not distributed. PyMuPDF is AGPL-3.0, which is a non-issue under that constraint. Revisit if distribution is ever planned.
+[AGPL-3.0](LICENSE). Lettore depends on PyMuPDF (AGPL-3.0), so the source stays open under the same license. The reference screenshot belongs to its original app and is included only as a design reference.

@@ -8,6 +8,7 @@ Tracks implementation against [SPEC.md](SPEC.md) (milestones in §8) and [README
 
 | Milestone | Status | Done |
 |---|---|---|
+| 2026-11-23 | Repo made public | Licensed AGPL-3.0 (PyMuPDF is AGPL). README, SPEC §10.2 updated, LICENSE added. |
 | Spec | Done (v0.5, decisions in §10) | — |
 | M0 Spike | In progress | 4 / 5 |
 | M1 Extraction | Not started | 0 / 7 |

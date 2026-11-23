@@ -122,7 +122,7 @@ Frontend only knows this contract, which is what makes Option B swappable.
 ## 10. Decisions (resolved questions)
 
 1. Target OS: **macOS only** for now. Cross-platform signing/packaging pitfalls in §7 are deferred.
-2. Distribution: **personal use only**. PyMuPDF (AGPL) is acceptable; Piper's GPL is not a blocker.
+2. Distribution: **personal use**; the source is public (2026-11-23) under **AGPL-3.0**, matching PyMuPDF. Piper's GPL is not a blocker.
 3. Platform: **desktop only**, no browser/web version. Option A stays; Option B is not pursued.
 4. Highlighting: **block-level** in v1; word-level is v2.
 5. README.md and progress.md follow this spec (updated 2026-11-23).
