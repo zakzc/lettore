@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "lettore",
-        "width": 800,
-        "height": 600
+        "title": "Lettore",
+        "width": 1180,
+        "height": 820,
+        "minWidth": 760,
+        "minHeight": 520
       }
     ],
     "security": {

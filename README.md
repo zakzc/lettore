@@ -2,7 +2,7 @@
 
 A local-first desktop app that loads a PDF, extracts and cleans its text, and reads it aloud with a local neural TTS voice. Everything runs offline on your Mac.
 
-> **Status:** M0 spike (Tauri shell + Python sidecar `/health` round trip). See [progress.md](progress.md).
+> **Status:** M0–M3.7 built (read PDFs aloud with Kokoro, language and voice selector, outline, minimap, dark mode); M4 packaging next. See [progress.md](progress.md).
 > **Source of truth:** [SPEC.md](SPEC.md). If this file disagrees with it, SPEC.md wins (and this file should then be fixed).
 
 ## Documents in this repo
@@ -50,6 +50,9 @@ Requires macOS, Node, Rust (stable), and [uv](https://docs.astral.sh/uv/).
 ```sh
 npm install
 sidecar/build.sh      # builds src-tauri/binaries/lettore-sidecar-<target-triple> (Python 3.12 venv via uv)
+# one-time: download the Kokoro model (~120 MB) into the app data dir
+D="$HOME/Library/Application Support/com.lettore.app/models"; mkdir -p "$D"; B=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+curl -fL -o "$D/kokoro-v1.0.int8.onnx" $B/kokoro-v1.0.int8.onnx; curl -fL -o "$D/voices-v1.0.bin" $B/voices-v1.0.bin
 npm run tauri dev     # starts the app; the shell spawns the sidecar
 ```
 
@@ -65,7 +68,7 @@ The shell passes `--port` and `--token` to the sidecar; the UI calls `/health` w
 
 ## Milestones
 
-M0 Spike · M1 Extraction · M2 TTS · M3 UI polish · M4 Packaging · M5 v2 (OCR, Piper, word-level highlight, voice per block type, audio export). Details in SPEC §8.
+M0 Spike · M1 Extraction · M2 TTS · M3 UI polish (M3.5 improvements, M3.6 language/voice, M3.7 speech flow) · M4 Packaging · M4.5 Main-body detection · M5 Extraction and voice optimisation · M6 v2 (OCR, Piper, word-level highlight, voice per block type, audio export). Details in SPEC §8.
 
 ## Non-goals (v1)
 
