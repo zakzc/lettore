@@ -6,7 +6,8 @@ import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 export type Block = { id: string; type: string; text: string; bbox: number[]; level?: number };
 export type Page = { n: number; width: number; height: number; blocks: Block[] };
 export type PlayerStatus = "idle" | "loading" | "playing" | "paused";
-type QueuedChunk = { chunkId: number; blockId: string };
+export type Span = { blockId: string; start: number; end: number };
+type QueuedChunk = { chunkId: number; blockId: string; spans: Span[] };
 
 const documentSlice = createSlice({
   name: "document",
@@ -50,6 +51,7 @@ const playerSlice = createSlice({
     queue: [] as QueuedChunk[], // chunks received from the sidecar and not yet finished playing
     currentChunkId: undefined as number | undefined,
     currentBlockId: undefined as string | undefined,
+    currentSpans: [] as Span[], // where the sentence being read sits, for the underline
     voice: saved.voice,
     rate: saved.rate,
     skipTypes: saved.skipTypes,
@@ -77,6 +79,7 @@ const playerSlice = createSlice({
       if (s.currentChunkId === undefined) {
         s.currentChunkId = a.payload.chunkId;
         s.currentBlockId = a.payload.blockId;
+        s.currentSpans = a.payload.spans;
       }
       s.status = s.status === "paused" ? "paused" : "playing";
     },
@@ -85,6 +88,7 @@ const playerSlice = createSlice({
       if (s.queue[0]) {
         s.currentChunkId = s.queue[0].chunkId;
         s.currentBlockId = s.queue[0].blockId;
+        s.currentSpans = s.queue[0].spans;
       }
     },
     reset: (s) => {
@@ -92,6 +96,7 @@ const playerSlice = createSlice({
       s.queue = [];
       s.currentChunkId = undefined;
       s.currentBlockId = undefined;
+      s.currentSpans = [];
     },
   },
 });

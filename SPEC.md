@@ -63,7 +63,7 @@ Decision: build Option A first; keep the sidecar API narrow (§6) so Option B ca
 - After parsing: PDF view + playback controls (play, pause, stop). Speed and voice (M2). Navigation (M3): double-click-to-start-here, a page minimap (click/drag to jump), skip paragraph forward/back, and per-block-type skip toggles (e.g. skip quotes/footnotes) so intros and comments can be bypassed. Language selector (M3.6): pick a language, then a voice of that language; Kokoro derives the TTS language from the voice id prefix.
 - State: Redux Toolkit slice for player (`status`, `queue`, `currentChunkId`, `voice`, `rate`) and one for document (`pages`, `blocks`, `parseStatus`).
 - Playback: stream audio chunks from the sidecar and queue them in an `AudioContext`. Replaces the original `sounddevice`/`pygame` idea, since audio now plays in the UI layer.
-- Highlight the currently spoken block on the PDF page (block-level in v1, word-level later).
+- Highlight the currently spoken block on the PDF page (block-level in v1, word-level later), and underline (blue) the exact sentence being read. Sentences are located on the page by the sidecar (`POST /geometry`), so no word timings from the TTS engine are needed.
 - Reference UI: `Screenshot 2026-11-18 at 14.24.06.png` in the repo root.
 
 **5.2 Sidecar: extraction (Python)**
@@ -77,8 +77,8 @@ Decision: build Option A first; keep the sidecar API narrow (§6) so Option B ca
 
 **5.3 Sidecar: chunking + TTS**
 
-- Chunk by sentence/paragraph (~1–3 sentences), never the whole document at once.
-- Pipeline: synthesise chunk N+1 while chunk N plays (prefetch 2–3 chunks).
+- Chunk by sentence (one sentence per chunk, abbreviations such as "Dr." and initials do not end one), never the whole document at once. Each chunk carries `spans` (block id + character range) so the UI can underline exactly that sentence, including one that runs across a column or page break.
+- Pipeline: synthesise chunk N+1 while chunk N plays (prefetch up to 4 sentences).
 - Default engine **Kokoro** (best quality, Apache-2.0). **Piper** as an optional low-end-CPU engine behind the same interface.
 - Pauses come from punctuation only: Kokoro adds 0.25 s after sentence ends and 0.1 s after clauses; a chunk that ends a sentence is padded to match, so chunk boundaries sound like the pauses inside a chunk. No extra silence at line, block or page breaks. Headings get no special pause yet.
 - Kokoro has no emotion or emphasis control (plain text in, no SSML). Delivery changes only via voice, speed and pauses; real emotion control would need another engine behind the same interface.
@@ -90,8 +90,9 @@ Bound to `127.0.0.1` on a random free port, with a per-launch token passed by th
 
 - `POST /parse` `{ path }` → `{ docId, pages: [{ n, blocks: [{ id, type, text, bbox }] }], toc }`
 - `GET /voices` → `{ engine, voices: [{ id, name, lang, language, gender }] }`; the UI groups by language and shows `name` only
-- `WS /speak?token=…` (browsers cannot set WebSocket headers) `{ docId, fromBlockId, voice, rate, skipTypes }` → stream of `{ chunkId, blockId, sampleRate, durationMs, audio }` (base64 16-bit mono PCM), then `{ done: true }` or `{ error }`. The client sends `{ ack: chunkId }` when a chunk finishes playing; the server stays at most 3 chunks ahead (backpressure), so pause simply stalls the stream. `blockId` is the block where the chunk starts.
+- `WS /speak?token=…` (browsers cannot set WebSocket headers) `{ docId, fromBlockId, voice, rate, skipTypes }` → stream of `{ chunkId, blockId, spans: [{ blockId, start, end }], sampleRate, durationMs, audio }` (base64 16-bit mono PCM), then `{ done: true }` or `{ error }`. The client sends `{ ack: chunkId }` when a chunk finishes playing; the server stays at most 4 chunks ahead (backpressure), so pause simply stalls the stream. `blockId` is the block where the chunk starts.
 - `POST /stop` → cancel the current synthesis (a new `/speak` also cancels the previous one)
+- `POST /geometry` `{ docId, blockId, start, end }` → `{ rects: [[x0, y0, x1, y1]] }`: page rectangles (PDF points) covering `block.text[start:end]`, one per text line, empty when it cannot be located (the UI then shows only the block highlight)
 - `GET /doc/{docId}/file` → the original PDF, for the pdf.js view
 - `GET /health` → `{ status, modelLoaded, modelError }`
 
@@ -117,6 +118,7 @@ Frontend only knows this contract, which is what makes Option B swappable.
 - **M3.5 UI improvements:** first batch built (design pass with dark mode, settings panel, outline panel, resume and persisted settings). Deferred: empty-state/recent files, keyboard shortcuts, zoom, reading mode, loading/error states, accessibility pass.
 - **M3.6 Language and voice selector:** voices grouped per language, shown by name without the id prefix (e.g. "Alex", not `pm_alex`).
 - **M3.7 Natural speech flow:** no pauses at line/block/page breaks, punctuation-only pauses, consistent pause at chunk ends.
+- **M3.8 Sentence underline:** blue underline on the exact sentence being read, on top of the block highlight.
 - **M4 Packaging:** installers for the target OS, first-run model download, signing.
 - **M4.5 Main-body detection:** tell the main text apart from side notes, side summaries and other boxes, mark them as a separate block type, and let the reader skip or keep them. Best effort: start with a feasibility spike on real PDFs, since layouts vary a lot (see §9).
 - **M5 Extraction and voice optimisation:** measure and improve extraction accuracy and speed (large books, caching, list and quote handling) and voice latency, quality and tuning (faster first chunk, model/precision comparison, pause controls).
@@ -150,3 +152,4 @@ Frontend only knows this contract, which is what makes Option B swappable.
 - PyMuPDF ≈ pdf.js on the server side, but with much richer layout/font data.
 - Tauri ≈ Electron, but with the OS webview and a Rust core instead of Chromium + Node.
 - Player state in Redux ≈ any async queue slice you'd write for a media player; the audio chunks are just like streamed fetch responses.
+10. Sentence underline: one chunk per sentence plus a `/geometry` lookup (PyMuPDF text search inside the block), rather than TTS word timings or a separate word-position index.

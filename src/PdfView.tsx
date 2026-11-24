@@ -1,14 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { errMsg, fetchBytes } from "./api";
+import { call, errMsg, fetchBytes } from "./api";
 import { play } from "./player";
-import { Page, useAppSelector } from "./store";
+import { Page, Span, useAppSelector } from "./store";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-function PageView({ pdf, page, scale, showTypes, currentBlockId }: {
-  pdf: pdfjs.PDFDocumentProxy; page: Page; scale: number; showTypes: boolean; currentBlockId?: string;
+// Rectangles (PDF points) of a sentence part, from the sidecar; [] when it cannot be located. Cached per span.
+const rectCache = new Map<string, Promise<number[][]>>();
+function spanRects(docId: string, s: Span): Promise<number[][]> {
+  const key = `${docId}|${s.blockId}|${s.start}|${s.end}`;
+  let hit = rectCache.get(key);
+  if (!hit) {
+    if (rectCache.size > 500) rectCache.clear();
+    hit = call("/geometry", { method: "POST", body: JSON.stringify({ docId, blockId: s.blockId, start: s.start, end: s.end }) })
+      .then((r) => (Array.isArray(r?.rects) ? r.rects.filter((q: unknown) => Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) : []))
+      .catch(() => []);
+    rectCache.set(key, hit);
+  }
+  return hit;
+}
+
+function PageView({ pdf, page, scale, showTypes, currentBlockId, underline }: {
+  pdf: pdfjs.PDFDocumentProxy; page: Page; scale: number; showTypes: boolean; currentBlockId?: string; underline?: number[][];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -77,6 +92,9 @@ function PageView({ pdf, page, scale, showTypes, currentBlockId }: {
             />
           );
         })}
+      {underline?.map(([x0, , x1, y1], i) => (
+        <div key={`u${i}`} className="ul" style={{ left: x0 * scale, top: y1 * scale - 1, width: (x1 - x0) * scale }} />
+      ))}
     </div>
   );
 }
@@ -85,6 +103,10 @@ export function PdfView({ showTypes }: { showTypes: boolean }) {
   const { docId, pages } = useAppSelector((s) => s.document);
   const currentBlockId = useAppSelector((s) => s.player.currentBlockId);
   const resumeBlockId = useAppSelector((s) => s.document.resumeBlockId);
+  const spans = useAppSelector((s) => s.player.currentSpans);
+  const queue = useAppSelector((s) => s.player.queue);
+  const [underlines, setUnderlines] = useState<Record<number, number[][]>>({});
+  const pageOf = useMemo(() => new Map(pages.flatMap((p) => p.blocks.map((b) => [b.id, p.n] as const))), [pages]);
   const wrap = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
   const [error, setError] = useState<string>();
@@ -118,6 +140,27 @@ export function PdfView({ showTypes }: { showTypes: boolean }) {
     return () => ro.disconnect();
   }, []);
 
+  // Underline the sentence being read; geometry for queued sentences is fetched ahead so it appears instantly.
+  useEffect(() => {
+    if (docId) queue.forEach((c) => c.spans.forEach((sp) => void spanRects(docId, sp)));
+  }, [docId, queue]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!docId || !spans.length) {
+      setUnderlines({});
+      return;
+    }
+    Promise.all(spans.map(async (sp) => ({ page: pageOf.get(sp.blockId), rects: await spanRects(docId, sp) }))).then((list) => {
+      if (cancelled) return;
+      const by: Record<number, number[][]> = {};
+      for (const { page, rects } of list) if (page) by[page] = (by[page] ?? []).concat(rects);
+      setUnderlines(by);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [docId, spans, pageOf]);
+
   // On open, jump to where the reader left off.
   useEffect(() => {
     if (!pdf || !resumeBlockId) return;
@@ -141,7 +184,7 @@ export function PdfView({ showTypes }: { showTypes: boolean }) {
       {error && <p className="error">Could not load the PDF view: {error}</p>}
       {pdf &&
         pages.map((p) => (
-          <PageView key={p.n} pdf={pdf} page={p} scale={scale} showTypes={showTypes} currentBlockId={currentBlockId} />
+          <PageView key={p.n} pdf={pdf} page={p} scale={scale} showTypes={showTypes} currentBlockId={currentBlockId} underline={underlines[p.n]} />
         ))}
     </div>
   );

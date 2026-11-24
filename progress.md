@@ -7,7 +7,7 @@ Tracks implementation against [SPEC.md](SPEC.md) (milestones in §8) and [README
 
 ## Where we are
 
-**Built through M3.7.** Everything works in tests; what is left is mostly checks only you can do (listening, looking).
+**Built through M3.8.** Everything works in tests; what is left is mostly checks only you can do (listening, looking).
 
 **Next up:** your review of M3.5–M3.7 → M4 packaging (first-run model download, signing) → M4.5 main-body detection → M5 optimisation → M6 v2 → deferred M3.5 items as needed.
 
@@ -17,7 +17,8 @@ Tracks implementation against [SPEC.md](SPEC.md) (milestones in §8) and [README
 2. M1: skim a few of your PDFs with "Show block types" on; tell me which blocks are mislabelled.
 3. M2/M3.7: listen for pauses at line, block and page breaks; they should now only sit on punctuation.
 4. M3/M3.5: the PDF view, highlight, minimap, outline and dark mode look right in the real window.
-5. M3.6: Japanese and Chinese voices are listed but untested.
+5. M3.8: the blue underline follows the spoken sentence (also across a column or page break) and sits where you expect.
+6. M3.6: Japanese and Chinese voices are listed but untested.
 
 ## Milestones
 
@@ -31,6 +32,7 @@ Tracks implementation against [SPEC.md](SPEC.md) (milestones in §8) and [README
 | M3.5 UI improvements | First batch built; rest deferred | 4 / 10 |
 | M3.6 Language and voice selector | Built | 4 / 4 |
 | M3.7 Natural speech flow | Built; listening check pending | 3 / 4 |
+| M3.8 Sentence underline | Built; look check pending | 4 / 5 |
 | M4 Packaging | Not started | 0 / 4 |
 | M4.5 Main-body detection | Not started (spike first) | 0 / 6 |
 | M5 Extraction and voice optimisation | Not started | 0 / 9 |
@@ -103,6 +105,14 @@ First batch (chosen 2026-11-24): calm reading-first look, auto/light/dark.
 - [x] Resume/click inside a merged paragraph starts at the containing sentence
 - [~] Listening check (**check 3 above**)
 
+## M3.8 — Sentence underline
+
+- [x] One chunk per sentence (abbreviation-aware), each with `spans` (block id + character range), also across merged column/page breaks
+- [x] `POST /geometry` returns per-line rectangles for a span (PyMuPDF text search inside the block; run-of-words fallback; lines merged)
+- [x] Blue underline on the page for the sentence being read; geometry for queued sentences is prefetched
+- [x] Verified: 99.7% of 456 sampled sentence spans located on three real PDFs, 4–12 ms each
+- [~] Look check (**check 5 above**): colour, thickness, position; Japanese/Chinese layouts untested
+
 ## M4 — Packaging
 
 - [ ] macOS installer (target-triple sidecar binary; revisit onedir)
@@ -161,6 +171,7 @@ Newest first. Update SPEC.md when a decision changes it.
 
 | Date | Item | Decision / finding |
 |---|---|---|
+| 2026-11-24 | M3.8 sentence underline | Chose per-sentence chunks + `/geometry` over TTS word timings (the int8 Kokoro model exposes none) and over shipping per-character data (several MB per book). Cost: more, shorter chunks (prefetch raised 3 → 4); an ~10 ms lookup per sentence; ~0.3% of spans cannot be located (odd PDF spacing) and then show only the block highlight. Sentences that repeat inside one block underline the first match. Quotes closing a sentence are not underlined (the sentence splitter drops them). |
 | 2026-11-24 | Bugfix: first double-click failed | Cause 1 (server): a chunk with nothing speakable (a lone bullet or ornament) made Kokoro raise `ValueError`, which `/speak` swallowed and closed the socket, shown as "sidecar closed the connection". Now such chunks are skipped and `chunkId` is renumbered at send time. Cause 2 (client): `play()` fired `POST /stop` for the old session, which could land on the new stream and cancel it; `play()` no longer calls `/stop` since a new `/speak` cancels the previous one. Verified with a PDF whose first block is a bullet. |
 | 2026-11-24 | Minimap v2 | Wider minimap that draws blocks as stripes (from block bboxes, no page rendering, so cheap even for long books); shows a window of pages that follows the reader, because a whole 500-page book cannot be legible in one column. Thin strip kept for whole-document jumps. |
 | 2026-11-24 | M3.7 speech flow | Measured: Kokoro leaves only ~0.1 s of silence at a chunk edge, so the audible "pause at line end" came from blocks that break mid-sentence (column/page breaks), each spoken as its own chunk with reset intonation. Fix: `chunker.py` joins such body blocks (no terminal punctuation + next starts lower case; de-hyphenates) into one paragraph before chunking, skipping footnotes in between; chunk `blockId` = block where the chunk starts, and resuming inside a merged paragraph starts at the containing sentence. Chunks that end a sentence get +0.15 s silence so boundaries match the 0.25 s in-chunk pause. Ebook sample: 4,924 blocks → 4,243 paragraphs. Highlight of a merged sentence changes at chunk, not block, granularity. Emotion/emphasis: not available in Kokoro (see SPEC §5.3). |

@@ -1,11 +1,16 @@
 import { errMsg, getSidecar, speakUrl } from "./api";
-import { Block, doc, playerActions as pa, store } from "./store";
+import { Block, doc, playerActions as pa, Span, store } from "./store";
 
-type Chunk = { chunkId: number; blockId: string; sampleRate: number; audio: string };
+type Chunk = { chunkId: number; blockId: string; sampleRate: number; audio: string; spans?: unknown };
 type Session = { ws: WebSocket; ctx: AudioContext; sources: Set<AudioBufferSourceNode> };
 
 const isChunk = (m: any): m is Chunk =>
   typeof m?.chunkId === "number" && typeof m?.blockId === "string" && typeof m?.sampleRate === "number" && typeof m?.audio === "string";
+
+const toSpans = (v: unknown): Span[] =>
+  Array.isArray(v)
+    ? v.filter((x) => typeof x?.blockId === "string" && Number.isInteger(x?.start) && Number.isInteger(x?.end) && x.end > x.start)
+    : [];
 
 function toBuffer(ctx: AudioContext, c: Chunk): AudioBuffer {
   const bytes = Uint8Array.from(atob(c.audio), (ch) => ch.charCodeAt(0));
@@ -92,7 +97,7 @@ export function play(fromBlockId?: string) {
     src.start(nextTime);
     nextTime += buf.duration;
     sources.add(src);
-    dispatch(pa.chunkQueued({ chunkId: m.chunkId, blockId: m.blockId }));
+    dispatch(pa.chunkQueued({ chunkId: m.chunkId, blockId: m.blockId, spans: toSpans(m.spans) }));
     src.onended = () => {
       sources.delete(src);
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ ack: m.chunkId }));

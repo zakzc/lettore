@@ -3,7 +3,7 @@
   --bg: #f4f3f0; --surface: #ffffff; --ink: #1f2328; --muted: #6a717a; --line: #e1ded8;
   --accent: #c8451d; --accent-soft: rgba(200,69,29,.12); --on-accent: #fff;
   --hl: rgba(240,190,20,.2); --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.08);
-  --page-filter: none;
+  --page-filter: none; --underline: #2563eb;
   font-family: system-ui, -apple-system, "SF Pro Text", sans-serif; font-size: 14px; color: var(--ink);
 }
 @media (prefers-color-scheme: dark) {
@@ -11,14 +11,14 @@
     color-scheme: dark;
     --bg: #14171b; --surface: #1d2126; --ink: #e7e9ec; --muted: #9aa2ab; --line: #2b3037;
     --accent: #e0643a; --accent-soft: rgba(224,100,58,.18); --hl: rgba(250,204,21,.22);
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.4); --page-filter: brightness(.9);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.4); --page-filter: brightness(.9); --underline: #3b82f6;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #14171b; --surface: #1d2126; --ink: #e7e9ec; --muted: #9aa2ab; --line: #2b3037;
   --accent: #e0643a; --accent-soft: rgba(224,100,58,.18); --hl: rgba(250,204,21,.22);
-  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.4); --page-filter: brightness(.9);
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.4); --page-filter: brightness(.9); --underline: #3b82f6;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); }
@@ -102,6 +102,7 @@ main { flex: 1; min-width: 0; }
 .blk.current { background: var(--hl); outline: 1px solid var(--accent); outline-offset: 1px; mix-blend-mode: multiply; }
 :root[data-theme="dark"] .blk.current { mix-blend-mode: normal; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .blk.current { mix-blend-mode: normal; } }
+.ul { position: absolute; height: 2.5px; border-radius: 2px; background: var(--underline); pointer-events: none; }
 .t-heading { outline: 1px solid #c2410c; } .t-body { outline: 1px solid #94a3b8; }
 .t-quote { outline: 1px solid #7c3aed; } .t-footnote { outline: 1px solid #0f766e; }
 

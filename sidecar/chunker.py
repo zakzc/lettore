@@ -2,8 +2,9 @@ import re
 from collections.abc import Iterator
 
 SENTENCE_END = re.compile(r"(?<=[.!?…])[\"”’')\]]*\s+(?=[\"“‘'(\[]?[A-ZÀ-Ý0-9])")
+# A period after these does not end a sentence ("Dr. Smith", "J. Smith", "e.g. this").
+ABBREVIATION = re.compile(r"(?:\b(?:Dr|Dra|Mr|Mrs|Ms|Prof|Sr|Sra|Jr|St|vs|etc|Fig|No)|\b[A-Z]|e\.g|i\.e)\.$")
 TERMINAL = (".", "!", "?", "…", ":", ";", '"', "”", "’", "'", ")", "]")
-MAX_SENTENCES, MAX_CHARS = 3, 300
 
 
 def _paragraphs(blocks: list[dict]) -> list[tuple[str, list[tuple[int, str]]]]:
@@ -27,40 +28,50 @@ def _paragraphs(blocks: list[dict]) -> list[tuple[str, list[tuple[int, str]]]]:
     return [(t, s) for t, s, _ in paras]
 
 
-def _sentences(text: str) -> Iterator[tuple[int, str]]:
-    pos = 0
+def _sentences(text: str) -> Iterator[tuple[int, int]]:
+    """Yield (start, end) offsets of each sentence in text."""
+    pieces, pos = [], 0
     for m in SENTENCE_END.finditer(text):
-        yield pos, text[pos : m.start()]
+        pieces.append((pos, m.start()))
         pos = m.end()
-    yield pos, text[pos:]
+    pieces.append((pos, len(text)))
+    merged: list[tuple[int, int]] = []
+    for a, b in pieces:
+        if merged and ABBREVIATION.search(text[merged[-1][0] : merged[-1][1]]):
+            merged[-1] = (merged[-1][0], b)
+        else:
+            merged.append((a, b))
+    for a, b in merged:
+        while a < b and text[a].isspace():
+            a += 1
+        while b > a and text[b - 1].isspace():
+            b -= 1
+        if a < b:
+            yield a, b
 
 
 def chunk_blocks(blocks: list[dict], from_block_id: str | None, skip_types: set[str]) -> Iterator[dict]:
-    """Yield {chunkId, blockId, text}: 1–3 sentences each. blockId is where the chunk starts."""
-    readable = [b for b in blocks if b["type"] not in skip_types]
-    paras = _paragraphs(readable)
+    """Yield one chunk per sentence: {chunkId, blockId, text, spans}.
+
+    spans = [{blockId, start, end}]: where the sentence sits in each block's text (a sentence that runs across a
+    column or page break covers two blocks). blockId is the block where the sentence starts.
+    """
+    paras = _paragraphs([b for b in blocks if b["type"] not in skip_types])
     start_at = next((i for i, (_, segs) in enumerate(paras) if any(bid == from_block_id for _, bid in segs)), 0)
     n = 0
     for pi, (text, segs) in enumerate(paras[start_at:], start=start_at):
         # When resuming inside a merged paragraph, begin at the sentence that contains the requested block.
         from_off = next((off for off, bid in segs if bid == from_block_id), 0) if pi == start_at else 0
-        group: list[tuple[int, str]] = []
-
-        def block_at(off: int) -> str:
-            return [bid for o, bid in segs if o <= off][-1]
-
-        def flush():
-            nonlocal n
-            if group:
-                yield {"chunkId": n, "blockId": block_at(group[0][0]), "text": " ".join(s for _, s in group)}
-                n += 1
-                group.clear()
-
-        for off, s in _sentences(text):
-            s = s.strip()
-            if not s or off + len(s) <= from_off:
+        bounds = [(off, segs[i + 1][0] if i + 1 < len(segs) else len(text), bid) for i, (off, bid) in enumerate(segs)]
+        for a, b in _sentences(text):
+            if b <= from_off:
                 continue
-            if group and (len(group) >= MAX_SENTENCES or sum(len(g) for _, g in group) + len(s) > MAX_CHARS):
-                yield from flush()
-            group.append((off, s))
-        yield from flush()
+            spans = [
+                {"blockId": bid, "start": max(a, lo) - lo, "end": min(b, hi) - lo}
+                for lo, hi, bid in bounds
+                if max(a, lo) < min(b, hi)
+            ]
+            if not spans:
+                continue
+            yield {"chunkId": n, "blockId": spans[0]["blockId"], "text": text[a:b], "spans": spans}
+            n += 1

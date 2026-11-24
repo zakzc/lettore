@@ -2,9 +2,11 @@ import argparse
 import asyncio
 import base64
 import os
+import re
 import sys
 import threading
 
+import pymupdf
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,7 +40,7 @@ def health() -> dict:
 engine: Engine | None = None
 engine_error: str | None = None
 DOCS: dict[str, dict] = {}  # docId -> {path, blocks (flat)}, for /speak and /doc/<id>/file
-PREFETCH = 3  # chunks the client may hold ahead of playback
+PREFETCH = 4  # chunks (sentences) the client may hold ahead of playback
 active_cancel: asyncio.Event | None = None
 
 
@@ -123,7 +125,7 @@ async def speak(ws: WebSocket) -> None:
             if cancel.is_set():
                 break
             await ws.send_json({
-                "chunkId": sent, "blockId": c["blockId"], "sampleRate": sr,
+                "chunkId": sent, "blockId": c["blockId"], "spans": c["spans"], "sampleRate": sr,
                 "durationMs": round(len(pcm) / 2 / sr * 1000), "audio": base64.b64encode(pcm).decode(),
             })
             sent += 1
@@ -157,8 +159,53 @@ def parse(req: ParseRequest) -> dict:
         doc = parse_pdf(req.path)
     except Exception as e:  # PyMuPDF raises various types for corrupt/non-PDF files
         raise HTTPException(status_code=422, detail=f"cannot parse PDF: {e}")
-    DOCS[doc["docId"]] = {"path": req.path, "blocks": [b for p in doc["pages"] for b in p["blocks"]]}
+    blocks = [b for p in doc["pages"] for b in p["blocks"]]
+    DOCS[doc["docId"]] = {"path": req.path, "blocks": blocks, "index": {b["id"]: b for b in blocks}}
     return doc
+
+
+class GeometryRequest(BaseModel):
+    docId: str
+    blockId: str
+    start: int
+    end: int
+
+
+def _merge_lines(rects: list) -> list[list[float]]:
+    """Join rectangles on the same text line into one, so a sentence gets one continuous underline per line."""
+    out: list[list[float]] = []
+    for r in sorted(rects, key=lambda r: (round(r.y1), r.x0)):
+        if out and abs(out[-1][3] - r.y1) < 2.5 and r.x0 - out[-1][2] < 8:
+            out[-1][2] = max(out[-1][2], r.x1)
+            out[-1][1] = min(out[-1][1], r.y0)
+        else:
+            out.append([r.x0, r.y0, r.x1, r.y1])
+    return [[round(v, 1) for v in r] for r in out]
+
+
+@app.post("/geometry", dependencies=[Depends(check_token)])
+def geometry(req: GeometryRequest) -> dict:
+    """Page rectangles (PDF points, top-left origin) covering block.text[start:end]; empty if it can't be located."""
+    doc = DOCS.get(req.docId)
+    block = doc["index"].get(req.blockId) if doc else None
+    if block is None:
+        raise HTTPException(status_code=404, detail="unknown block")
+    text = block["text"][max(0, req.start) : max(0, req.end)].strip()
+    m = re.match(r"p(\d+)b", block["id"])
+    if not text or not m:
+        return {"rects": []}
+    try:
+        with pymupdf.open(doc["path"]) as pdf:
+            page = pdf[int(m.group(1)) - 1]
+            clip = pymupdf.Rect(block["bbox"]) + (-2, -2, 2, 2)
+            rects = page.search_for(text, clip=clip)
+            if not rects:  # odd spacing/bullets in the PDF: locate runs of 4 words and underline the ones found
+                words = text.split()
+                for i in range(0, len(words), 4):
+                    rects += page.search_for(" ".join(words[i : i + 4]), clip=clip)
+    except Exception:
+        return {"rects": []}
+    return {"rects": _merge_lines(rects)}
 
 
 @app.get("/doc/{doc_id}/file", dependencies=[Depends(check_token)])
